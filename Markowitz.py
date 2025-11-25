@@ -62,7 +62,19 @@ class EqualWeightPortfolio:
         """
         TODO: Complete Task 1 Below
         """
-
+        # 1. 計算剩餘資產的數量 (m)
+        m = len(assets)
+        
+        # 2. 計算每個資產的權重 (1/m)
+        # 由於是等權重且每日再平衡，所有時間點的權重都是固定的常數
+        weight = 1.0 / m
+        
+        # 3. 將計算出的權重賦值給 portfolio_weights 對應的資產欄位
+        # Pandas 會自動將這個純量 (scalar) 廣播 (broadcast) 到該欄的所有列 (日期)
+        self.portfolio_weights[assets] = weight
+        
+        # 4. 確保被排除的資產 (如 SPY) 權重為 0
+        self.portfolio_weights[self.exclude] = 0.0
         """
         TODO: Complete Task 1 Above
         """
@@ -113,7 +125,29 @@ class RiskParityPortfolio:
         """
         TODO: Complete Task 2 Below
         """
-
+        for i in range(self.lookback + 1, len(df)):
+            # 1. 取得過去 lookback 天的報酬率 (不含當天)
+            window_returns = df_returns[assets].iloc[i - self.lookback : i]
+            
+            # 2. 計算波動率 (Pandas 預設 ddof=1，樣本標準差)
+            sigmas = window_returns.std()
+            
+            # 3. 計算倒數
+            inv_sigmas = 1.0 / sigmas
+            inv_sigmas.replace([np.inf, -np.inf], 0, inplace=True)
+            
+            # 4. 歸一化
+            sum_inv = inv_sigmas.sum()
+            if sum_inv > 0:
+                weights = inv_sigmas / sum_inv
+            else:
+                weights = 0.0
+            
+            # 5. 填入權重
+            self.portfolio_weights.loc[df.index[i], assets] = weights
+            
+        # 6. 確保排除資產為 0
+        self.portfolio_weights[self.exclude] = 0.0
 
 
         """
@@ -188,10 +222,24 @@ class MeanVariancePortfolio:
                 TODO: Complete Task 3 Below
                 """
 
-                # Sample Code: Initialize Decision w and the Objective
-                # NOTE: You can modify the following code
-                w = model.addMVar(n, name="w", ub=1)
-                model.setObjective(w.sum(), gp.GRB.MAXIMIZE)
+                # 1. 初始化決策變數 w
+                # lb=0 確保了 w >= 0 (Long-only constraint)
+                # ub=1 雖然被 sum=1 隱含，但設為 1 也是安全的
+                w = model.addMVar(n, name="w", ub=1, lb=0)
+
+                # 2. 定義目標函數
+                # 公式: Maximize (w @ mu) - (gamma / 2) * (w @ Sigma @ w)
+                # Gurobi 的 MVar 物件支援使用 '@' 符號進行矩陣乘法
+                port_return = w @ mu
+                port_risk = w @ Sigma @ w
+                
+                # 注意：我們要最大化這個目標
+                obj = port_return - 0.5 * gamma * port_risk
+                model.setObjective(obj, gp.GRB.MAXIMIZE)
+
+                # 3. 加入預算限制條件
+                # Sum(w) == 1
+                model.addConstr(w.sum() == 1, name="budget")
 
                 """
                 TODO: Complete Task 3 Above

@@ -70,7 +70,57 @@ class MyPortfolio:
         """
         TODO: Complete Task 4 Below
         """
+        n_assets = len(assets)
+        assets_list = list(assets)
         
+        # XLK-focused strategy with trend timing
+        sma_period = 200
+        rebalance_freq = 5
+        
+        # Core holding: XLK (tech), XLY (consumer discretionary)
+        core_assets = ['XLK', 'XLY']
+        # Defensive: XLP (staples), XLV (healthcare), XLU (utilities)
+        defensive_assets = ['XLP', 'XLV', 'XLU']
+        
+        current_weights = np.ones(n_assets) / n_assets
+        
+        for i in range(self.lookback, len(self.price)):
+            if (i - self.lookback) % rebalance_freq == 0:
+                # Check XLK trend
+                xlk_idx = assets_list.index('XLK') if 'XLK' in assets_list else 0
+                xlk_prices = self.price['XLK'].iloc[max(0, i-sma_period):i+1]
+                
+                if len(xlk_prices) >= sma_period:
+                    sma = xlk_prices.iloc[-sma_period:].mean()
+                    current_price = xlk_prices.iloc[-1]
+                    uptrend = current_price > sma
+                else:
+                    uptrend = True
+                
+                current_weights = np.zeros(n_assets)
+                
+                if uptrend:
+                    # In uptrend: 60% XLK, 40% XLY
+                    if 'XLK' in assets_list:
+                        current_weights[assets_list.index('XLK')] = 0.6
+                    if 'XLY' in assets_list:
+                        current_weights[assets_list.index('XLY')] = 0.4
+                else:
+                    # In downtrend: split among defensive sectors
+                    for asset in defensive_assets:
+                        if asset in assets_list:
+                            current_weights[assets_list.index(asset)] = 1.0 / len(defensive_assets)
+                
+                # Ensure weights sum to 1
+                if current_weights.sum() > 0:
+                    current_weights = current_weights / current_weights.sum()
+                else:
+                    current_weights = np.ones(n_assets) / n_assets
+            
+            for j, asset in enumerate(assets_list):
+                self.portfolio_weights.loc[self.price.index[i], asset] = current_weights[j]
+            self.portfolio_weights.loc[self.price.index[i], self.exclude] = 0.0
+
         
         """
         TODO: Complete Task 4 Above
